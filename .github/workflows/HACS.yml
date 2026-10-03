@@ -13,3 +13,6 @@ jobs:
         uses: "hacs/action@main"
         with:
           category: "integration"
+          # Forks are not submissions to the HACS default catalog. Validate
+          # integration packaging, but keep catalog metadata checks upstream.
+          ignore: ${{ github.event.repository.fork && 'issues topics' || '' }}
