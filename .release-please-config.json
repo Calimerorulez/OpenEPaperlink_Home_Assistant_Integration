@@ -1,6 +1,7 @@
 {
   "release-type": "simple",
   "include-v-in-tag": false,
+  "bootstrap-sha": "f28c21761365181cfaf203030678f1c29433baf3",
   "packages": {
     ".": {
       "extra-files": [
