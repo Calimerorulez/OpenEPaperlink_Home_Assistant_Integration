@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.0.1](https://github.com/Calimerorulez/ha-openepaperlink/compare/3.0.0...3.0.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* **ci:** use built-in token when release-please secret is absent ([35809a4](https://github.com/Calimerorulez/ha-openepaperlink/commit/35809a4e4f502cb6179125d5e74a1a500336a126))
+* **compatibility:** use asyncio timeout and correct Home Assistant manifest validation ([09f56ab](https://github.com/Calimerorulez/ha-openepaperlink/commit/09f56ab27dd5210fed79435f31127e2411b74aa7))
+* **docs:** point HACS installation instructions to ha-openepaperlink ([09f56ab](https://github.com/Calimerorulez/ha-openepaperlink/commit/09f56ab27dd5210fed79435f31127e2411b74aa7))
+* **release:** bootstrap fork releases from the upstream 3.0.0 baseline ([09f56ab](https://github.com/Calimerorulez/ha-openepaperlink/commit/09f56ab27dd5210fed79435f31127e2411b74aa7))
+* **services:** resolve device identifiers correctly and deduplicate label and area targets ([09f56ab](https://github.com/Calimerorulez/ha-openepaperlink/commit/09f56ab27dd5210fed79435f31127e2411b74aa7))
+* **upload:** isolate upload completion and errors per request and enforce queue capacity ([09f56ab](https://github.com/Calimerorulez/ha-openepaperlink/commit/09f56ab27dd5210fed79435f31127e2411b74aa7))
+
 ## [3.0.0](https://github.com/OpenEPaperLink/Home_Assistant_Integration/compare/2.8.0...3.0.0) (2026-03-27)
 
 
