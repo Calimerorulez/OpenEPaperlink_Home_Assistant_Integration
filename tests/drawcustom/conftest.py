@@ -104,7 +104,7 @@ def image_gen(mock_hass):
             print("Assets directory not found")
 
     # Create a patch for FontManager to avoid filesystem operations
-    with patch('custom_components.open_epaper_link.imagegen.FontManager', autospec=True) as MockFontManager:
+    with patch('custom_components.open_epaper_link.imagegen.core.FontManager', autospec=True) as MockFontManager:
         # Configure the mock FontManager
         font_manager_instance = MockFontManager.return_value
 
@@ -198,3 +198,40 @@ def pytest_sessionfinish(session, exitstatus):
     returning the exit status to the system.
     """
     pass  # Add any cleanup code if needed
+
+
+def text_images_equal(img1, img2):
+    """Compare text masks allowing one pixel of FreeType rasterization variation.
+
+    Reference images were created in 2024. Compare each thresholded RGB color
+    separately, preserving ink counts and layout without relying on JPEG noise
+    or an identical FreeType build. Shape tests keep exact images_equal checks.
+    """
+    import numpy as np
+    from PIL import Image, ImageFilter
+
+    if img1.size != img2.size:
+        return False
+    labels = []
+    for img in (img1, img2):
+        channels = np.asarray(img.convert("RGB")) < 128
+        labels.append(
+            channels[:, :, 0].astype(np.uint8) * 4
+            + channels[:, :, 1].astype(np.uint8) * 2
+            + channels[:, :, 2].astype(np.uint8)
+        )
+    for color in range(1, 8):
+        actual = labels[0] == color
+        expected = labels[1] == color
+        expected_count = int(expected.sum())
+        if abs(int(actual.sum()) - expected_count) > max(1, expected_count * 0.01):
+            return False
+        expanded_actual = np.asarray(
+            Image.fromarray(actual.astype(np.uint8) * 255).filter(ImageFilter.MaxFilter(3))
+        ) > 0
+        expanded_expected = np.asarray(
+            Image.fromarray(expected.astype(np.uint8) * 255).filter(ImageFilter.MaxFilter(3))
+        ) > 0
+        if np.any(actual & ~expanded_expected) or np.any(expected & ~expanded_actual):
+            return False
+    return True

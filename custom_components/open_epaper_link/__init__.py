@@ -3,6 +3,7 @@ import logging
 import os
 from typing import Final
 
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform, EVENT_HOMEASSISTANT_STARTED, CONF_HOST
@@ -18,6 +19,8 @@ from .runtime_data import OpenEPaperLinkConfigEntry, OpenEPaperLinkBLERuntimeDat
 from .services import async_setup_services
 from .tag_types import get_tag_types_manager
 from .util import is_ble_entry
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _LOGGER: Final = logging.getLogger(__name__)
 

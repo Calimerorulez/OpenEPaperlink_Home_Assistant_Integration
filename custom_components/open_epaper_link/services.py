@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from functools import wraps
 from typing import Final, Any, Callable
@@ -74,8 +75,11 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 translation_placeholders={"device_id": device_id},
             )
 
-        domain_mac = next(iter(device.identifiers))
-        if domain_mac[0] != DOMAIN:
+        domain_mac = next(
+            (identifier for identifier in device.identifiers if identifier[0] == DOMAIN),
+            None,
+        )
+        if domain_mac is None:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="device_not_oepl",
@@ -151,6 +155,8 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             # Normalize to lists
             if isinstance(device_ids, str):
                 device_ids = [device_ids]
+            else:
+                device_ids = list(device_ids)
             if isinstance(label_ids, str):
                 label_ids = [label_ids]
             if isinstance(area_ids, str):
@@ -180,26 +186,27 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                     translation_key="no_targets_specified",
                 )
 
-            # Process each device
+            # Enqueue all targets before waiting. Track results per service call.
             errors: list[tuple[str, str]] = []
+            uploads = []
             for device_id in unique_device_ids:
                 try:
                     entity_id = await get_entity_id_from_device_id(device_id)
-                    await func(service, entity_id, *args, **kwargs)
-                except ServiceValidationError as err:
+                    completion = await func(service, entity_id, *args, **kwargs)
+                    if completion is not None:
+                        uploads.append((device_id, completion))
+                except (ServiceValidationError, HomeAssistantError,
+                        BLEConnectionError, BLETimeoutError, BLEProtocolError) as err:
                     errors.append((device_id, str(err)))
 
-                # Wait for all queued uploads to complete
-                # This is async/await so it doesn't block the HA event loop
-                try:
-                    ble_errors = await ble_upload_queue.wait_for_current_batch()
-                    hub_errors = await hub_upload_queue.wait_for_current_batch()
-                    for ble_error in ble_errors:
-                        errors.append((device_id, str(ble_error)))
-                    for hub_error in hub_errors:
-                        errors.append((device_id, str(hub_error)))
-                except (ServiceValidationError, HomeAssistantError) as err:
-                    errors.append((device_id, str(err)))
+            # Shield queue-owned futures so cancellation of a caller cannot
+            # cancel uploads already accepted by the shared queue.
+            results = await asyncio.gather(
+                *(asyncio.shield(completion) for _, completion in uploads)
+            )
+            for (device_id, _), error in zip(uploads, results):
+                if error is not None:
+                    errors.append((device_id, str(error)))
 
             # If ANY errors occurred across all targets, raise them
             if errors:
@@ -212,7 +219,9 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         return wrapper
 
     @handle_targets
-    async def drawcustom_service(service: ServiceCall, entity_id: str) -> None:
+    async def drawcustom_service(
+        service: ServiceCall, entity_id: str
+    ) -> asyncio.Future[Exception | None] | None:
         """Handle drawcustom service calls.
 
         Processes requests to generate and upload custom images to tags.
@@ -267,13 +276,6 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                     translation_placeholders={"errors": errors_str},
                 )
 
-            if device_errors:
-                _LOGGER.warning(
-                    "Completed with warnings for device %s:\n%s",
-                    entity_id,
-                    "\n".join(device_errors)
-                )
-
             # Handle dry-run mode
             if service.data.get("dry-run", False):
                 _LOGGER.info("Dry run completed for %s", entity_id)
@@ -300,13 +302,13 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                     )
 
                 # Determine upload method
-                await ble_upload_queue.add_to_queue(upload_to_ble_block, hass, entity_id, image_data, dither)
+                return await ble_upload_queue.add_to_queue(upload_to_ble_block, hass, entity_id, image_data, dither)
             else:
                 # Map refresh_type to AP's lut parameter
                 # 0→1 (full), 1→3 (fast), 2→2 (fast no-reds), 3→0 (no-repeats)
                 ap_lut_mapping = {0: 1, 1: 3, 2: 2, 3: 0}
                 ap_lut = ap_lut_mapping.get(refresh_type, 1)  # Default to 1 (full) if invalid
-                await hub_upload_queue.add_to_queue(
+                return await hub_upload_queue.add_to_queue(
                     upload_to_hub, hub, entity_id, image_data, dither,
                     service.data.get("ttl", 60),
                     service.data.get("preload_type", 0),

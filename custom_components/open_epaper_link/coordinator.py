@@ -6,7 +6,6 @@ from typing import Final, Dict, Any, Callable, Awaitable
 import json
 import requests
 import aiohttp
-import async_timeout
 import websockets
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
@@ -228,7 +227,7 @@ class Hub:
 
         # Wait briefly to ensure connection is established
         try:
-            async with async_timeout.timeout(CONNECTION_TIMEOUT):
+            async with asyncio.timeout(CONNECTION_TIMEOUT):
                 while not self.online and not self._shutdown.is_set():
                     await asyncio.sleep(0.1)
 
@@ -1090,7 +1089,7 @@ class Hub:
                 return
 
             async with aiohttp.ClientSession() as session:
-                async with async_timeout.timeout(10):
+                async with asyncio.timeout(10):
                     async with session.get(f"http://{self.host}/get_ap_config") as response:
                         if response.status != 200:
                             _LOGGER.error("Failed to fetch AP config: HTTP %s", response.status)
@@ -1392,7 +1391,7 @@ class Hub:
             aiohttp.ClientError: If connection fails or HTTP error occurs
             asyncio.TimeoutError: If request times out
         """
-        async with async_timeout.timeout(10):
+        async with asyncio.timeout(10):
             async with self._session.get(f"http://{self.host}/sysinfo") as response:
                 response.raise_for_status()  # Raises ClientResponseError on non-2xx
 
