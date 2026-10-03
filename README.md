@@ -1,8 +1,8 @@
 # OpenEPaperLink integration for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/OpenEpaperLink/Home_Assistant_Integration?style=for-the-badge)](https://github.com/OpenEpaperLink/Home_Assistant_Integration/releases)
-[![GitHub issues](https://img.shields.io/github/issues/OpenEpaperLink/Home_Assistant_Integration?style=for-the-badge)](https://github.com/OpenEpaperLink/Home_Assistant_Integration/issues)
+[![Tests](https://github.com/Calimerorulez/ha-openepaperlink/actions/workflows/tests.yml/badge.svg)](https://github.com/Calimerorulez/ha-openepaperlink/actions/workflows/tests.yml)
+[![Upstream issues](https://img.shields.io/github/issues/OpenEpaperLink/Home_Assistant_Integration?style=for-the-badge)](https://github.com/OpenEpaperLink/Home_Assistant_Integration/issues)
 
 [//]: # (Server Widget has to be enabled first)
 [//]: # (![Discord]&#40;https://img.shields.io/discord/717057001594683422?style=flat-square&#41;)
@@ -10,6 +10,10 @@
 
 
 Home Assistant Integration for the [OpenEPaperLink](https://github.com/jjwbruijn/OpenEPaperLink) project, enabling control and monitoring of electronic shelf labels (ESLs) through Home Assistant.
+
+This is the [Calimerorulez fork](https://github.com/Calimerorulez/ha-openepaperlink) of the [upstream OpenEPaperLink integration](https://github.com/OpenEPaperLink/Home_Assistant_Integration), with service and upload hardening. Install this fork using its own HACS custom repository URL. The integration domain remains `open_epaper_link`; existing entity and action names are unchanged.
+
+The Issues badge links to upstream because Issues are currently disabled on this fork.
 
 ## Requirements
 
@@ -106,10 +110,14 @@ For any issues, the `#atc_ble_oepl` and `#home_assistant` channel on the [OpenEP
 Once flashed and configured, tags are discovered by HA automatically.
 
 ### Option 1: HACS Installation (Recommended)
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=OpenEpaperLink&repository=Home_Assistant_Integration)
+1. Open HACS, select the three-dot menu, then **Custom repositories**.
+2. Add `https://github.com/Calimerorulez/ha-openepaperlink` with type **Integration**.
+3. Find OpenEPaperLink, download it, and restart Home Assistant.
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Calimerorulez&repository=ha-openepaperlink)
 
 ### Option 2: Manual Installation
-1. Download the `open_epaper_link` folder from the [latest release](https://github.com/jonasniesner/open_epaper_link_homeassistant/releases/latest)
+1. Download this repository using **Code → Download ZIP** from [ha-openepaperlink](https://github.com/Calimerorulez/ha-openepaperlink), then extract `custom_components/open_epaper_link`.
 2. Copy it to your [`custom_components` folder](https://developers.home-assistant.io/docs/creating_integration_file_structure/#where-home-assistant-looks-for-integrations)
 3. Restart Home Assistant
 
