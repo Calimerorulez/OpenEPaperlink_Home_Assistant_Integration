@@ -6,7 +6,6 @@ from datetime import datetime
 from io import BytesIO
 from typing import Final
 
-import async_timeout
 import requests
 from requests_toolbelt import MultipartEncoder
 from PIL import Image
@@ -51,6 +50,8 @@ class UploadQueueHandler:
             max_concurrent: Maximum number of concurrent uploads (default: 1)
             cooldown: Cooldown period in seconds between uploads (default: 1.0)
         """
+        if max_concurrent < 1:
+            raise ValueError("max_concurrent must be at least 1")
         self._queue = asyncio.Queue()
         self._max_concurrent = max_concurrent
         self._cooldown = cooldown
@@ -59,13 +60,14 @@ class UploadQueueHandler:
         self._lock = asyncio.Lock()
         self._processing = False
         self._processor_task = None  # Track the processor task
-        self._errors = []  # Collect errors from failed uploads
 
     def __str__(self):
         """Return queue status string."""
         return f"Queue(active={self._active_uploads}, size={self._queue.qsize()})"
 
-    async def add_to_queue(self, upload_func, *args, **kwargs):
+    async def add_to_queue(
+        self, upload_func, *args, **kwargs
+    ) -> asyncio.Future[Exception | None]:
         """Add an upload task to the queue.
 
         Queues an upload function with its arguments for later execution.
@@ -75,39 +77,25 @@ class UploadQueueHandler:
             upload_func: Async function that performs the actual upload
             *args: Positional arguments to pass to the upload function
             **kwargs: Keyword arguments to pass to the upload function
+
+        Returns:
+            A future containing None on success or the upload exception on failure.
         """
 
         entity_id = next((arg for arg in args if isinstance(arg, str) and "." in arg), "unknown")
 
         _LOGGER.debug("Adding upload task to queue for %s. %s", entity_id, self)
-        # Add a task to the queue
-        await self._queue.put((upload_func, args, kwargs))
+        # Return a result future owned by this upload, not a shared error batch.
+        completion = asyncio.get_running_loop().create_future()
+        await self._queue.put((upload_func, args, kwargs, completion))
 
         # Start the processing queue if not already running
         if not self._processing:
             _LOGGER.debug("Starting upload queue processor for %s", entity_id)
+            self._processing = True
             self._processor_task = asyncio.create_task(self._process_queue())
 
-    async def wait_for_current_batch(self):
-        """Wait for all currently queued uploads to complete.
-
-        This allows service handlers to wait for uploads without blocking
-        the Home Assistant event loop (uses async/await).
-
-        Returns:
-            list: List of exception messages from failed uploads (empty if all succeeded)
-        """
-        if self._processor_task and not self._processor_task.done():
-            _LOGGER.debug("Waiting for upload queue to complete")
-            await self._processor_task
-
-        # Retrieve any errors that were collected during processing
-        if self._errors:
-            errors = self._errors.copy()
-            self._errors = []  # Clear for next batch
-            return errors
-
-        return []  # No errors
+        return completion
 
     async def _process_queue(self):
         """Process queued upload tasks with true parallelism.
@@ -133,22 +121,7 @@ class UploadQueueHandler:
                     done_tasks = {task for task in running_tasks if task.done()}
                     for task in done_tasks:
                         running_tasks.remove(task)
-                        # Get the result to propagate any exceptions
-                        try:
-                            await task
-                        except (ServiceValidationError, HomeAssistantError) as err:
-                            # Collect validation and operational errors
-                            _LOGGER.error("Background upload task failed: %s", str(err))
-                            # Don't raise - collect error and continue processing other uploads
-                            if not hasattr(self, '_errors'):
-                                self._errors = []
-                            self._errors.append(str(err))
-                        except Exception as err:
-                            # Unexpected errors - collect and continue
-                            _LOGGER.error("Unexpected background upload error: %s", str(err), exc_info=True)
-                            if not hasattr(self, '_errors'):
-                                self._errors = []
-                            self._errors.append(f"Unexpected upload error: {str(err)}")
+                        await task
 
                 # Check if new uploads can be started
                 async with self._lock:
@@ -164,11 +137,14 @@ class UploadQueueHandler:
                                 await asyncio.sleep(self._cooldown - elapsed)
 
                         # Get next task from queue
-                        upload_func, args, kwargs = await self._queue.get()
+                        upload_func, args, kwargs, completion = await self._queue.get()
                         entity_id = next((arg for arg in args if isinstance(arg, str) and "." in arg), "unknown")
 
-                        # Create and start background task
-                        task = asyncio.create_task(self._execute_upload(upload_func, args, kwargs, entity_id))
+                        # Reserve capacity before the task can start.
+                        self._active_uploads += 1
+                        task = asyncio.create_task(
+                            self._execute_upload(upload_func, args, kwargs, entity_id, completion)
+                        )
                         running_tasks.add(task)
 
                         # Update last upload timestamp
@@ -181,28 +157,28 @@ class UploadQueueHandler:
         finally:
             self._processing = False
             _LOGGER.debug("Upload queue processor finished. %s", self)
-            # Errors are stored in self._errors and will be retrieved by wait_for_current_batch()
-            # Don't raise here - let the caller handle them
 
-    async def _execute_upload(self, upload_func, args, kwargs, entity_id):
+    async def _execute_upload(self, upload_func, args, kwargs, entity_id, completion):
         """Execute a single upload task in the background."""
         try:
-            # TODO don't we need the incrementation logic here?
             _LOGGER.debug("Starting upload for %s", entity_id)
             await upload_func(*args, **kwargs)
             _LOGGER.info("Successfully completed upload for %s", entity_id)
+            if not completion.done():
+                completion.set_result(None)
 
         except (ServiceValidationError, HomeAssistantError) as err:
-            # Log and re-raise - let service handler collect errors
-            _LOGGER.error("Upload failed for %s: %s", entity_id, str(err))
-            raise
+            _LOGGER.error("Upload failed for %s: %s", entity_id, err)
+            if not completion.done():
+                completion.set_result(err)
         except Exception as err:
-            # Unexpected error - wrap and raise
-            raise HomeAssistantError(
+            error = HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="unexpected_upload",
                 translation_placeholders={"entity_id": entity_id, "error": str(err)},
-            ) from err
+            )
+            if not completion.done():
+                completion.set_result(error)
         finally:
             # Decrement active upload counter
             async with self._lock:
@@ -267,7 +243,7 @@ async def upload_to_hub(hub, entity_id: str, img: bytes, dither: int, ttl: int,
 
             mp_encoder = MultipartEncoder(fields=fields)
 
-            async with async_timeout.timeout(30):  # 30 second timeout for upload
+            async with asyncio.timeout(30):  # 30 second timeout for upload
                 response = await hub.hass.async_add_executor_job(
                     lambda: requests.post(
                         url,

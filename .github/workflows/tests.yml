@@ -13,10 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12.0
+      - name: Set up Python 3.14
         uses: actions/setup-python@v5
         with:
-          python-version: 3.12.0
+          python-version: "3.14"
           cache: 'pip'
 
       - name: Create virtual environment
@@ -31,6 +31,9 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements_test.txt
 
+      - name: Check Python correctness
+        run: ruff check custom_components tests
+
       - name: Run tests
         run: |
-          PYTHONPATH=${{ github.workspace }} pytest tests -v
+          PYTHONPATH=${{ github.workspace }} pytest tests -v --cov=custom_components.open_epaper_link --cov-report=term --cov-report=xml
